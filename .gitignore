@@ -1,0 +1,17 @@
+# Secrets
+.env
+.env.local
+
+# Output
+out/
+*.png
+
+# Dependencies
+node_modules/
+package-lock.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/

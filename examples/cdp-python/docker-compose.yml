@@ -1,0 +1,15 @@
+# Run the CDP example against an Archonum remote browser.
+#
+#   cp .env.example .env   # fill in your credentials
+#   docker compose up --build
+#
+# Screenshots + result.json land in ./out
+
+services:
+  cdp-python:
+    build: .
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      - ./out:/app/out

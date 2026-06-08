@@ -1,0 +1,11 @@
+# Run the proxy example through an Archonum per-country proxy.
+#
+#   cp .env.example .env   # fill in your credentials
+#   docker compose up --build
+
+services:
+  proxy-nodejs:
+    build: .
+    env_file:
+      - path: .env
+        required: false

@@ -1,0 +1,12 @@
+{
+  "name": "archonum-cdp-nodejs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node cdp-example.js"
+  },
+  "dependencies": {
+    "playwright": "^1.40.0"
+  }
+}
