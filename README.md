@@ -7,6 +7,14 @@ from your own code.
   drive it with Playwright. No local browser needed; Archonum _is_ the browser.
 - **Proxy** — fetch a per-country HTTP proxy and route normal requests through it.
 
+The CDP examples open the [creepjs](https://creepjs.org/checker) fingerprint
+checker and capture its **Collector Coverage** panel — a quick way to see the
+remote browser passing real-browser signal checks:
+
+<p align="center">
+  <img src="docs/collector-coverage.png" alt="creepjs Collector Coverage: 100% coverage, 58 collectors" width="360">
+</p>
+
 Each example lives in its own folder under [`examples/`](examples) with its own
 README, `Dockerfile`, and `docker-compose.yml`.
 

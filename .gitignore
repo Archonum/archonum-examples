@@ -2,9 +2,8 @@
 .env
 .env.local
 
-# Output
+# Output (example runs write here)
 out/
-*.png
 
 # Dependencies
 node_modules/
