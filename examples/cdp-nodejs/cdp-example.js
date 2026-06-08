@@ -27,11 +27,12 @@ import { chromium } from 'playwright';
 const DEFAULT_BASE_URL = 'https://app.archonum.com';
 const DEFAULT_CDP_BASE_URL = 'http://app.archonum.com:10900';
 
-const TARGET_URL = process.env.TARGET_URL || 'https://api.ipify.org?format=json';
+const TARGET_URL = process.env.TARGET_URL || 'https://creepjs.org/checker';
 const OUTPUT_DIR = process.env.OUTPUT_DIR || 'out';
 const CONNECT_TIMEOUT_MS = Number(process.env.CONNECT_TIMEOUT_MS) || 30000;
 const CONNECT_RETRIES = Number(process.env.CONNECT_RETRIES) || 5;
-const PAGE_SETTLE_MS = Number(process.env.PAGE_SETTLE_MS) || 3000;
+// creepjs computes a fingerprint/trust score client-side, which takes a while.
+const PAGE_SETTLE_MS = Number(process.env.PAGE_SETTLE_MS) || 15000;
 
 const withCreds = (url, username, password) => {
   const u = new URL(url);
@@ -105,6 +106,43 @@ async function connectWithRetry(endpoint) {
   }
 }
 
+/**
+ * Find the card containing `heading`, scroll it to the top, screenshot that
+ * screenful, and pull the numbers out of the card's text. Generic: anchors on
+ * the leaf element whose own text is the heading, then climbs to the smallest
+ * ancestor holding the panel's "Total Collectors" summary.
+ */
+async function capturePanel(page, heading, clip, outPath) {
+  const handle = await page.evaluateHandle((h) => {
+    const want = h.toLowerCase();
+    const node = [...document.querySelectorAll('*')].find(
+      (e) => e.childElementCount === 0 && (e.textContent || '').trim().toLowerCase() === want,
+    );
+    if (!node) return null;
+    let el = node;
+    while (el.parentElement && !/Total Collectors/i.test(el.textContent || '')) el = el.parentElement;
+    return el;
+  }, heading);
+  const element = handle.asElement();
+  if (!element) return null;
+
+  const text = await element.innerText();
+  await element.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  await page.waitForTimeout(500);
+  await page.screenshot({ path: outPath, animations: 'disabled', clip });
+
+  const num = (re) => text.match(re)?.[1] ?? null;
+  return {
+    coverage: num(/([\d.]+)%\s+Coverage/i),
+    successful: num(/(\d+)\s+Successful/i),
+    failed: num(/(\d+)\s+Failed/i),
+    skipped: num(/(\d+)\s+Skipped/i),
+    total_collectors: num(/(\d+)\s+Total Collectors/i),
+    total_time: num(/([\d.]+ms)\s+Total Time/i),
+    avg_per_attempt: num(/([\d.]+ms)\s+Avg/i),
+  };
+}
+
 async function main() {
   await mkdir(OUTPUT_DIR, { recursive: true });
   const endpoint = await resolveEndpoint();
@@ -135,6 +173,19 @@ async function main() {
   await page.screenshot({ path: shot, animations: 'disabled', clip });
   console.log(`  shot  -> ${shot}`);
 
+  // On the creepjs checker, grab the "Collector Coverage" summary panel.
+  let coverage = null;
+  if (TARGET_URL.toLowerCase().includes('creepjs')) {
+    const covShot = join(OUTPUT_DIR, 'collector-coverage.png');
+    coverage = await capturePanel(page, 'Collector Coverage', clip, covShot);
+    if (coverage) {
+      console.log(`  coverage -> ${JSON.stringify(coverage)}`);
+      console.log(`  panel    -> ${covShot}`);
+    } else {
+      console.log('  Collector Coverage panel not found');
+    }
+  }
+
   const result = {
     endpoint: redact(endpoint),
     target: TARGET_URL,
@@ -142,6 +193,7 @@ async function main() {
     title,
     body: bodyText,
     screenshot: shot,
+    collector_coverage: coverage,
   };
   await writeFile(join(OUTPUT_DIR, 'result.json'), JSON.stringify(result, null, 2) + '\n');
   console.log(`saved -> ${join(OUTPUT_DIR, 'result.json')}`);

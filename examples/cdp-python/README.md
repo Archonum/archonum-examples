@@ -36,7 +36,19 @@ Connecting over CDP does **not** download a local Chromium.
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `TARGET_URL` | `https://api.ipify.org?format=json` | Page to open |
+| `TARGET_URL` | `https://creepjs.org/checker` | Page to open |
 | `CDP_MODE` | auto | Force `browsers` or `gateway` |
 | `OUTPUT_DIR` | `out` | Where the screenshot + result land |
 | `ARCHONUM_BASE_URL` | `https://app.archonum.com` | API base (browsers mode) |
+
+## Output
+
+In `out/`:
+
+- `screenshot.png` — the target page, one mobile screenful.
+- `result.json` — page url, title, and a summary.
+
+When the target is the creepjs checker (the default), it also captures the
+**Collector Coverage** panel as `collector-coverage.png` and parses its numbers
+(coverage %, successful / failed / skipped, total collectors, timing) into the
+`collector_coverage` field of `result.json`.

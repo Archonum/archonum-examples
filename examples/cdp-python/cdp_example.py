@@ -22,6 +22,7 @@ Mode auto-selects from whichever credentials are set; override with CDP_MODE.
 
 import json
 import os
+import re
 import time
 import urllib.request
 from pathlib import Path
@@ -32,12 +33,13 @@ from playwright.sync_api import sync_playwright
 DEFAULT_BASE_URL = "https://app.archonum.com"
 DEFAULT_CDP_BASE_URL = "http://app.archonum.com:10900"
 
-TARGET_URL = os.environ.get("TARGET_URL", "https://api.ipify.org?format=json")
+TARGET_URL = os.environ.get("TARGET_URL", "https://creepjs.org/checker")
 OUTPUT_DIR = Path(os.environ.get("OUTPUT_DIR", "out"))
 HTTP_TIMEOUT = float(os.environ.get("HTTP_TIMEOUT_MS", "10000")) / 1000
 CONNECT_TIMEOUT_MS = float(os.environ.get("CONNECT_TIMEOUT_MS", "30000"))
 CONNECT_RETRIES = int(os.environ.get("CONNECT_RETRIES", "5"))
-PAGE_SETTLE_MS = float(os.environ.get("PAGE_SETTLE_MS", "3000"))
+# creepjs computes a fingerprint/trust score client-side, which takes a while.
+PAGE_SETTLE_MS = float(os.environ.get("PAGE_SETTLE_MS", "15000"))
 
 
 def _with_creds(url: str, username: str, password: str) -> str:
@@ -121,6 +123,48 @@ def connect_with_retry(playwright, endpoint: str):
             time.sleep(wait)
 
 
+def capture_panel(page, heading: str, clip: dict, out_path: Path) -> dict | None:
+    """Find the card containing `heading`, scroll it to the top, screenshot that
+    screenful, and pull the numbers out of the card's text. Generic: anchors on
+    the leaf element whose own text is the heading, then climbs to the smallest
+    ancestor holding the panel's "Total Collectors" summary."""
+    handle = page.evaluate_handle(
+        """(heading) => {
+            const want = heading.toLowerCase();
+            const node = [...document.querySelectorAll('*')].find(e =>
+                e.childElementCount === 0 &&
+                (e.textContent || '').trim().toLowerCase() === want);
+            if (!node) return null;
+            let el = node;
+            while (el.parentElement && !/Total Collectors/i.test(el.textContent || ''))
+                el = el.parentElement;
+            return el;
+        }""",
+        heading,
+    )
+    element = handle.as_element()
+    if not element:
+        return None
+    text = element.inner_text()
+    element.evaluate("el => el.scrollIntoView({block: 'start'})")
+    page.wait_for_timeout(500)
+    page.screenshot(path=str(out_path), animations="disabled", clip=clip)
+
+    def num(label_re: str):
+        m = re.search(label_re, text, re.I)
+        return m.group(1) if m else None
+
+    return {
+        "coverage": num(r"([\d.]+)%\s+Coverage"),
+        "successful": num(r"(\d+)\s+Successful"),
+        "failed": num(r"(\d+)\s+Failed"),
+        "skipped": num(r"(\d+)\s+Skipped"),
+        "total_collectors": num(r"(\d+)\s+Total Collectors"),
+        "total_time": num(r"([\d.]+ms)\s+Total Time"),
+        "avg_per_attempt": num(r"([\d.]+ms)\s+Avg"),
+    }
+
+
 def main() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     endpoint = resolve_endpoint()
@@ -155,6 +199,17 @@ def main() -> None:
         page.screenshot(path=str(shot), animations="disabled", clip=clip)
         print(f"  shot  -> {shot}")
 
+        # On the creepjs checker, grab the "Collector Coverage" summary panel.
+        coverage = None
+        if "creepjs" in TARGET_URL.lower():
+            cov_shot = OUTPUT_DIR / "collector-coverage.png"
+            coverage = capture_panel(page, "Collector Coverage", clip, cov_shot)
+            if coverage:
+                print(f"  coverage -> {coverage}")
+                print(f"  panel    -> {cov_shot}")
+            else:
+                print("  Collector Coverage panel not found")
+
         result = {
             "endpoint": _redact(endpoint),
             "target": TARGET_URL,
@@ -162,6 +217,7 @@ def main() -> None:
             "title": title,
             "body": body_text.strip(),
             "screenshot": str(shot),
+            "collector_coverage": coverage,
         }
         (OUTPUT_DIR / "result.json").write_text(json.dumps(result, indent=2) + "\n")
         print(f"saved -> {OUTPUT_DIR / 'result.json'}")
